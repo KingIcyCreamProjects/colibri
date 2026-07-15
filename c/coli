@@ -161,6 +161,19 @@ def resource_request(a, env):
 
 def env_for(a):
     e = dict(os.environ, SNAP=a.model)
+    if sys.platform == "win32" and not e.get("COLI_NO_OMP_TUNE"):
+        # parita' col tuning OMP self-exec di glm.c (solo Linux/FreeBSD, e comunque
+        # saltato sotto CUDA/Metal): libgomp legge queste variabili prima di main,
+        # quindi su Windows vanno messe nell'ambiente del figlio. setdefault:
+        # un override esplicito dell'utente vince sempre.
+        # niente OMP_PROC_BIND/OMP_PLACES: la libgomp di MinGW non supporta
+        # l'affinity su Windows ("Affinity not supported on this configuration")
+        from resource_plan import physical_cpu_count
+        for k, v in (("OMP_WAIT_POLICY", "active"),
+                     ("GOMP_SPINCOUNT", "200000"),
+                     ("OMP_DYNAMIC", "FALSE"),
+                     ("OMP_NUM_THREADS", str(physical_cpu_count()))):
+            e.setdefault(k, v)
     e["COLI_POLICY"]=a.policy
     if a.ram:  e["RAM_GB"]=str(a.ram)
     if a.ngen: e["NGEN"]=str(a.ngen)
