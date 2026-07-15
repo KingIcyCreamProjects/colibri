@@ -45,6 +45,7 @@ import { activeRequests, supportsCacheSlots } from "@/lib/runtime"
 import { Markdown, copyText, visibleAnswer } from "@/lib/markdown"
 import { Brain } from "./Brain"
 import { persist, persistPublicSettings, stored } from "@/lib/storage"
+import { SYSTEM_PRESETS } from "@/lib/presets"
 import { useTheme, type Theme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
@@ -495,7 +496,15 @@ export default function App() {
         <section className="side-section">
           <div className="section-title"><ScrollText className="size-3.5" /> System prompt</div>
           <Textarea value={systemPrompt} placeholder="Steer every reply — e.g. “You are a terse C systems expert.”" onChange={(event) => setSystemPrompt(event.target.value)} style={{ minHeight: 70 }} />
-          <span className="field-help">Sent as the first message · persists across reloads</span>
+          <div className="preset-row" style={{ gridTemplateColumns: `repeat(${SYSTEM_PRESETS.length + 1}, 1fr)` }}>
+            {SYSTEM_PRESETS.map((p) => (
+              <button key={p.name} type="button" className={systemPrompt === p.text ? "active" : ""} onClick={() => setSystemPrompt(systemPrompt === p.text ? "" : p.text)}>
+                {p.name}<small>{p.hint}</small>
+              </button>
+            ))}
+            <button type="button" onClick={() => setSystemPrompt("")} disabled={!systemPrompt}>Clear<small>no steering</small></button>
+          </div>
+          <span className="field-help">Sent as the first message · persists across reloads · Ponytail adapted from <a href="https://github.com/DietrichGebert/ponytail" target="_blank" rel="noreferrer">DietrichGebert/ponytail</a></span>
         </section>
 
         <section className="side-section">
