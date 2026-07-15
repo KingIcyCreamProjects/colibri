@@ -2,7 +2,7 @@
 
 Command-line settings for the two user-facing programs: the **`coli`** CLI and the **`openai_server.py`** server. The underlying `glm` engine is driven by environment variables — see [ENVIRONMENT.md](ENVIRONMENT.md).
 
-**Generated from `upstream/dev @ 6d3ed7e`** (argparse definitions in `c/coli` and `c/openai_server.py`). See [MAINTAINING-DOCS.md](MAINTAINING-DOCS.md) to regenerate.
+**Generated from `HEAD @ 62419af`** (argparse definitions in `c/coli` and `c/openai_server.py`). See [MAINTAINING-DOCS.md](MAINTAINING-DOCS.md) to regenerate.
 
 ---
 
@@ -25,6 +25,7 @@ Flags may also be given **after** the subcommand. Most flags map onto an engine 
 | `run "<prompt>"` | One-shot generation for the given prompt (positional, may be multi-word). |
 | `chat` | Interactive REPL chat. |
 | `serve` | Start the OpenAI-compatible HTTP server. |
+| `web` | Serve the API **and** the web dashboard on one port, then open the browser (`--no-browser` to skip). |
 | `bench [tasks]` | Run benchmark tasks (`--limit`, `--data`). |
 | `convert` | Convert an FP8 repo to a colibrì int4 snapshot. |
 
@@ -37,9 +38,9 @@ Flags may also be given **after** the subcommand. Most flags map onto an engine 
 | `--ctx` | `0` (auto) | `CTX` | Context length. |
 | `--cap` | `8` | `<cap>` argv | Expert-cache cap (starting point; see `CAP_RAISE`). |
 | `--ngen` | `1024` | `NGEN` | Max tokens to generate. |
-| `--temp` | none (`0`=greedy; engine default 1.0) | `TEMP` | Sampling temperature. |
-| `--topp` | `0` | `TOPP` | Top-p filter. |
-| `--topk` | `0` | `TOPK` | Top-k filter. |
+| `--temp` | none (`0`=greedy; engine auto default `0.7`) | `TEMP` | Token-sampling temperature. |
+| `--topp` | `0` | `TOPP` | **Expert-routing** reduction (adaptive top-p over experts): drop the low-weight tail of routed experts for fewer disk reads, at a small quality cost. Not a token-sampling filter. **Lossy** — prints a warning. |
+| `--topk` | `0` | `TOPK` | **Expert-routing** reduction: cap routed experts per token for fewer disk reads, at a small quality cost. Not a token-sampling filter. **Lossy** — prints a warning. |
 | `--repin` | `0` | `REPIN` | Re-pin experts every N tokens. |
 | `--policy` | `quality` | `COLI_POLICY` | `quality` \| `balanced` \| `experimental-fast`. |
 | `--gpu` | `None` | `COLI_GPU(S)` | `auto`, `none`, or a device list like `0,1`. |
@@ -60,6 +61,14 @@ Flags may also be given **after** the subcommand. Most flags map onto an engine 
 | `--max-queue` | `$COLI_MAX_QUEUE` or `8` | Max queued requests. |
 | `--queue-timeout` | `$COLI_QUEUE_TIMEOUT` or `300` | Seconds a request may wait. |
 | `--kv-slots` | `$COLI_KV_SLOTS` or `1` | Independent KV conversation slots (→ `KV_SLOTS`). |
+
+**`web`**
+
+Takes the same flags as `serve` (`--host`, `--port`, `--model-id`, `--api-key`, `--cors-origin`, `--max-queue`, `--queue-timeout`, `--kv-slots`), plus:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--no-browser` | off | Don't auto-open the dashboard in a browser once the API answers. |
 
 **`convert`**
 

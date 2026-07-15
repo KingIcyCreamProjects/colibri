@@ -6,7 +6,7 @@
 
 | Doc | Source of truth | What to scan for |
 |---|---|---|
-| `ENVIRONMENT.md` | `c/glm.c` (and other `c/*.c`) | every `getenv("...")` call — the default and the trailing `/* comment */` |
+| `ENVIRONMENT.md` | `c/glm.c` (and other `c/*.c`, `c/*.cu`, `c/*.mm`) | every `getenv("...")` call — the default and the trailing `/* comment */` |
 | `SETTINGS.md` | `c/coli`, `c/openai_server.py` | every `add_parser(...)` and `add_argument(...)` |
 
 Nothing else defines these. If a knob isn't at one of those call sites, it isn't real.
@@ -20,14 +20,14 @@ cd <repo>
 git fetch upstream
 HASH=$(git rev-parse --short upstream/dev); echo "documenting $HASH"
 
-# Environment variables (defaults + inline comments):
-git grep -n 'getenv("' upstream/dev -- 'c/*.c'
+# Environment variables (defaults + inline comments) — scan C, CUDA, and Metal sources:
+git grep -n 'getenv("' upstream/dev -- 'c/*.c' 'c/*.cu' 'c/*.mm'
 
 # CLI settings:
 git grep -nE 'add_parser\(|add_argument\(' upstream/dev -- c/coli c/openai_server.py
 
 # Quick sanity: how many distinct env vars exist now?
-git grep -hoE 'getenv\("[A-Z0-9_]+"\)' upstream/dev -- 'c/*.c' \
+git grep -hoE 'getenv\("[A-Z0-9_]+"\)' upstream/dev -- 'c/*.c' 'c/*.cu' 'c/*.mm' \
   | sed -E 's/getenv\("(.*)"\)/\1/' | sort -u | wc -l
 ```
 
@@ -35,7 +35,7 @@ git grep -hoE 'getenv\("[A-Z0-9_]+"\)' upstream/dev -- 'c/*.c' \
 
 ```bash
 # vars currently in the code:
-git grep -hoE 'getenv\("[A-Z0-9_]+"\)' upstream/dev -- 'c/*.c' \
+git grep -hoE 'getenv\("[A-Z0-9_]+"\)' upstream/dev -- 'c/*.c' 'c/*.cu' 'c/*.mm' \
   | sed -E 's/getenv\("(.*)"\)/\1/' | sort -u > /tmp/code_vars.txt
 # vars currently in the doc (crude: grab `VAR` cells):
 grep -oE '`[A-Z0-9_]{2,}`' docs/ENVIRONMENT.md | tr -d '`' | sort -u > /tmp/doc_vars.txt

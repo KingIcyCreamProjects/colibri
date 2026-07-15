@@ -9,6 +9,11 @@ still rank inside top-`M`.
 This is **routing-side** (can change which experts run). Complementary to
 **PILOT** (next-layer *prefetch* of weights; does not change expert IDs).
 
+**Not free speed.** The whole lever — `CACHE_ROUTE` and its `ROUTE_J`/`ROUTE_M`/`ROUTE_P`/`ROUTE_ALPHA`
+knobs — buys fewer disk reads by *substituting* cached experts for some of the true top-K, so it
+can shift output and cost quality; the savings come directly from that substitution. Keep it off for
+quality-sensitive or leaderboard-comparable runs, and A/B with `./coli bench` before relying on it.
+
 ## Flags
 
 | Env | Default | Meaning |

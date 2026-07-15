@@ -2,11 +2,11 @@
 
 Reference for the environment variables read by the colibrì engine.
 
-**Generated from `upstream/dev @ 6d3ed7e`** by scanning every `getenv()` site in `c/glm.c`. Defaults and behavior are taken from the source; see [MAINTAINING-DOCS.md](MAINTAINING-DOCS.md) to regenerate this after the code changes.
+**Generated from `HEAD @ 62419af`** by scanning every `getenv()` site in `c/glm.c`, `c/backend_cuda.cu`, and `c/backend_metal.mm`. Defaults and behavior are taken from the source; see [MAINTAINING-DOCS.md](MAINTAINING-DOCS.md) to regenerate this after the code changes.
 
 ## Which program reads these?
 
-The C engine binary (`c/glm`, built from `c/glm.c`) reads **all** of these. You rarely export them by hand — the `coli` CLI and `openai_server.py` translate most of their flags into these variables before launching `glm` (e.g. `--temp` → `TEMP`, `--ctx` → `CTX`). See [SETTINGS.md](SETTINGS.md) for the flag → variable mapping. Export a variable directly only to reach a knob the CLI doesn't surface, or to override what the CLI would set.
+The C engine binary (`c/glm`, or `c/glm.exe` on Windows, built from `c/glm.c`) reads **all** of these. You rarely export them by hand — the `coli` CLI and `openai_server.py` translate most of their flags into these variables before launching `glm` (e.g. `--temp` → `TEMP`, `--ctx` → `CTX`). See [SETTINGS.md](SETTINGS.md) for the flag → variable mapping. Export a variable directly only to reach a knob the CLI doesn't surface, or to override what the CLI would set.
 
 Format: `VAR` — default — effect.
 
@@ -19,15 +19,15 @@ Format: `VAR` — default — effect.
 | `RAM_GB` | `0` (auto ≈ 88% of free RAM) | RAM budget in GB for the resident/streamed expert working set. Higher → more experts stay hot → higher cache hit rate. |
 | `CTX` | `4096` | Maximum context length (tokens) the KV cache is sized for. |
 | `NGEN` | `256` (engine) | Max tokens to generate before stopping (stop tokens can end sooner). `coli --ngen` defaults to `1024`. |
-| `TEMP` | `-1` (auto: `1.0` for chat/text, greedy elsewhere) | Sampling temperature. **`TEMP=0` = greedy/argmax = deterministic.** |
-| `NUCLEUS` | `0.90` | Nucleus (top-p) mass kept when sampling. Slightly tighter than the official 0.95 because the int4 tail is noisy. |
-| `TOPK` | `0` (off) | Top-k filter on the sampling distribution (`0` = no limit). |
-| `TOPP` | `0` (off) | Top-p filter (`0` = use `NUCLEUS`). |
+| `TEMP` | `-1` (auto: `0.7` for chat/text, greedy elsewhere) | Token-sampling temperature. **`TEMP=0` = greedy/argmax = deterministic.** The `0.7` auto default is deliberately below the official `1.0`: at int4 the distribution tail is quantization noise. |
+| `NUCLEUS` | `0.90` | Nucleus (top-p) mass kept when **sampling tokens**. Slightly tighter than the official 0.95 because the int4 tail is noisy. This is the token-level top-p — distinct from the expert-routing `TOPP` below. |
+| `TOPK` | `0` (off) | **Expert-routing reduction, not a token-sampling filter:** run only `TOPK` routed experts per token instead of the model's configured top-K (`0` = no reduction). Fewer experts → fewer per-token disk reads, at a small quality cost. **Lossy** — off by default; the CLI prints a warning when set. |
+| `TOPP` | `0` (off) | **Expert-routing reduction** (adaptive top-p over experts): keep routed experts until their cumulative gate weight reaches `TOPP`, dropping the low-weight tail (`0` = off). ~30–40% fewer expert disk reads at a small quality cost. **Lossy** — off by default; the CLI prints a warning when set. For token sampling top-p use `NUCLEUS`. |
 | `SEED` | unset → seeded from clock + PID | RNG seed for sampling. **Unset = different every run.** Set a fixed value for reproducible sampling. |
 | `KVSAVE` | `1` (on) | Persist the KV cache to `<model>/.coli_kv` so a conversation reopens warm. `KVSAVE=0` disables save+load (lossless round-trip; does not change output). |
 | `KV_SLOTS` | `1` | Number of independent KV conversation slots (1–16), used in serve mode. |
 | `THINK` | `0` (off) | Emit a `<think>` reasoning block. `THINK=1` turns on visible reasoning. |
-| `MTP` | on | Multi-Token Prediction (speculative draft head). `MTP=0` disables it. |
+| `MTP` | on | Multi-Token Prediction (speculative draft head). Speedup, not free: lossless in exact arithmetic, but batched draft verification is **not byte-identical** to non-speculative greedy in practice, and on a **cold** cache it can be a net *time* loss until experts warm. `MTP=0` disables it. |
 
 ---
 
@@ -38,6 +38,7 @@ Format: `VAR` — default — effect.
 | `COLI_METAL` | off | Enable the Apple-Silicon Metal GPU backend. Requires a `make METAL=1` build. |
 | `COLI_METAL_GEMM_MIN` | `16` | Minimum matmul rows to dispatch a GEMM to the GPU (below this, stays on CPU). |
 | `COLI_METAL_SPIN` | off | Keep a GPU keep-alive spinner running (reduces dispatch latency; costs power). |
+| `COLI_METAL_UNTRACKED` | off | Allocate Metal resources with hazard tracking disabled (`MTLResourceHazardTrackingModeUntracked`) to shave dispatch overhead; the engine manages ordering itself. `=1` opts in. |
 | `PIPE` | `0` (off) | Overlap expert disk-load with matmul via I/O worker threads. Byte-identical output; reorders I/O. `PIPE=1` opts in. |
 | `PIPE_WORKERS` | `8` | Number of I/O worker threads when `PIPE=1`. Tune to your SSD (fewer avoids over-subscribing cores). |
 | `DIRECT` | `0` (off) | Use `O_DIRECT`/unbuffered reads for expert slabs. Helps sustained NVMe; keeps the zero-copy GPU path. |
@@ -53,7 +54,7 @@ Format: `VAR` — default — effect.
 | `PILOT` | `0` (off) | Router-piloted cross-layer expert prefetch. |
 | `PILOT_REAL` | `0` (off) | Value-preserving real cross-layer prefetch loads (`PILOT_REAL=1` opts in). |
 | `PILOT_K` | `6` if `PILOT_REAL` else `8` | Number of experts the pilot prefetches per step. |
-| `CACHE_ROUTE` | `0` (off) | Opt-in max-rank cache-aware MoE routing (pin∪LRU prefer within top-M). See [CACHE_ROUTE.md](CACHE_ROUTE.md). |
+| `CACHE_ROUTE` | `0` (off) | Opt-in max-rank cache-aware MoE routing (pin∪LRU prefer within top-M). **Routing-side and lossy** — it can substitute which experts run, so it can shift output; keep off for quality / leaderboard-comparable runs. Tuned by `ROUTE_J/M/P/ALPHA` below. See [CACHE_ROUTE.md](CACHE_ROUTE.md). |
 | `ROUTE_J` | `2` | Sacred top ranks always taken when `CACHE_ROUTE=1`. |
 | `ROUTE_M` | `12` | Max-rank window for resident preference when `CACHE_ROUTE=1`. |
 | `ROUTE_P` | `0` | Cumulative mass window for CACHE_ROUTE (`0` = fixed M). |
@@ -61,7 +62,7 @@ Format: `VAR` — default — effect.
 | `ROUTE_AGREE` | auto | Overlap% + KL vs true top-K; auto-on when `CACHE_ROUTE=1`. |
 | `ABSORB` | `-1` (auto: absorbed for S≤4) | MLA attention absorption mode. |
 | `IDOT` | `1` | Integer dot-product kernel. `IDOT=0` uses exact f32 kernels (for A/B numerical checks). |
-| `COLI_POLICY` | `quality` | Resource policy: `quality`, `balanced`, or `experimental-fast`. |
+| `COLI_POLICY` | `quality` | Resource policy: `quality`, `balanced`, or `experimental-fast`. `quality`/`balanced` preserve checkpoint precision and router decisions; **`experimental-fast` trades output quality for speed** — not for quality-sensitive runs. |
 
 ---
 
@@ -77,6 +78,23 @@ Format: `VAR` — default — effect.
 | `COLI_CUDA_ATTN` | off | Run S≤4 attention on the GPU. |
 | `COLI_CUDA_PROFILE` | off | Emit CUDA timing. |
 
+**Advanced CUDA kernel selection** — leave at defaults unless profiling. These pick the GPU expert matmul path and its batch-row thresholds:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `COLI_CUDA_ASYNC` | on | Stage host↔device copies through pinned buffers for async H2D/D2H overlap. `=0` uses synchronous copies. |
+| `COLI_CUDA_PIPE` | `0` | Pipelined expert execution on the GPU. |
+| `COLI_CUDA_PIPE_SHARD` | off | Shard the GPU expert pipeline across the selected devices. |
+| `COLI_CUDA_ATTN_SHARD` | off | Shard the S≤4 GPU attention across the selected devices. |
+| `COLI_CUDA_DUAL_PROJ` | on | Fuse gate+up into one dual-projection kernel for int4 experts. `=0` runs them separately. |
+| `COLI_CUDA_W4_PACKED` | on | Use the packed-int4 weight kernel for S≤4 experts. `=0` falls back to the unpacked path. |
+| `COLI_CUDA_TC_INT4` | off | Tensor-Core int4 expert kernel. |
+| `COLI_CUDA_TC_MIN_ROWS` | `8` | Min batch rows before the TC int4 kernel is used. |
+| `COLI_CUDA_TC_W4A16` | off | Tensor-Core w4a16 (int4 weight / fp16 activation) kernel; requires compute capability ≥ 7. |
+| `COLI_CUDA_TC_W4A16_MIN` | `16` | Min batch rows before the TC w4a16 kernel is used. |
+| `COLI_CUDA_SHARED_W4A16` | off | Run the shared expert through the w4a16 GPU kernel. |
+| `COLI_CUDA_SHARED_W4A16_MIN_ROWS` | `32` | Min batch rows before the shared-expert w4a16 kernel is used. |
+
 ---
 
 ## Advanced / experimental / debug
@@ -86,13 +104,22 @@ These are for testing, benchmarking, or internal use — not part of the everyda
 | Variable | Default | Effect |
 |---|---|---|
 | `SPEC` | `1` | Speculative decoding on/off. |
-| `DRAFT` | `-1` (auto: 3 with MTP, else 0) | Number of speculative draft tokens per step. |
-| `GRAMMAR` | unset | Path to a GBNF grammar file to constrain generation. |
-| `GRAMMAR_DRAFT` | unset | Max grammar-forced draft span length. |
+| `DRAFT` | `-1` (auto: 3 with MTP, else 0) | Number of speculative draft tokens per step. Speculation is **not byte-identical** to non-speculative greedy in practice; set `DRAFT=0` for exact, reproducible decode. |
+| `GRAMMAR` | unset | Path to a GBNF grammar file to constrain generation via forced drafts (output is unchanged if unset). |
+| `SCHEMA` | unset | Path to a JSON-Schema file, compiled to GBNF (`schema_gbnf.h`) as the same forced-draft source — the everyday front door for constrained JSON / structured output. `GRAMMAR` takes precedence if both are set; both fail soft (the engine runs and output is unchanged). |
+| `GRAMMAR_DRAFT` | `24` | Max grammar-forced draft span length per forward (clamped to 1–48). |
 | `DSA` | on | Dynamic Sparse Attention indexer. `DSA=0` disables. |
 | `DSA_FORCE` | `0` | Force the DSA path on. |
 | `DSA_TOPK` | model value | Override the DSA index top-k (testing). |
 | `LOOKA` | `0` | Measure router predictability (instrumentation). |
+| `PILOT_TWO` | `0` (off) | Experimental two-step router-lookahead prefetch: correct the next-layer routing prediction with the shared expert before prefetching (+2.3% recall, 3 extra matmuls). Extends `PILOT`; prefetch-only. |
+| `COUPLE` | unset | Path to a coupling-score file for cross-layer expert prefetch (#176). Prefetch-only — does not change expert IDs. |
+| `COUPLE_K` | `8` | Experts prefetched per coupling step (clamped 1–32); only used with `COUPLE`. |
+| `COUPLE_D` | `1` | Coupling prefetch depth in layers (clamped 1–2); only used with `COUPLE`. |
+| `ROUTE_TRACE` | unset | Path to write a per-token routing trace to (`ROUTE_TRACE=<file>`); debug/instrumentation. |
+| `COLI_NO_FUSED_PAIR` | `0` | `=1` disables the fused gate+up OpenMP dispatch for single-token int4 CPU experts (ablation). |
+| `I4S` | `1` (arch-dependent) | Use the int4 IDOT kernel only for batch size S ≥ `I4S`. Default `1` where a hardware SDOT/VNNI kernel exists, `2` otherwise. |
+| `REPIN_VERBOSE` | unset | `=1` logs live re-pin (`REPIN`) decisions to stderr. |
 | `I4_ACC512` / `I4_ACC512_TEST` | off | int4 512-wide accumulator kernel toggle / self-test. |
 | `NOPACK` | off | Disable weight packing. |
 | `DROP` | off | Drop-related debug toggle. |
@@ -122,7 +149,7 @@ These are read by the Python programs (not the `glm` engine), so they don't appe
 | `COLI_MAX_QUEUE` | `8` | Max queued requests. |
 | `COLI_QUEUE_TIMEOUT` | `300` | Seconds a request may wait in the queue. |
 | `COLI_KV_SLOTS` | `1` | Independent KV conversation slots (→ engine `KV_SLOTS`). |
-| `COLI_POLICY` | `quality` | Resource policy (shared with the engine): `quality` \| `balanced` \| `experimental-fast`. |
+| `COLI_POLICY` | `quality` | Resource policy (shared with the engine): `quality` \| `balanced` \| `experimental-fast` (`experimental-fast` is lossy — trades quality for speed). |
 | `COLI_COLOR` | auto (TTY) | `COLI_COLOR=1` forces colored `coli` output when not a TTY. |
 | `COLI_RAW` | `0` | `coli` raw output mode. |
 
@@ -132,7 +159,7 @@ These are read by the Python programs (not the `glm` engine), so they don't appe
 
 `coli` / `openai_server.py` set these internally to select a run mode or pass through a flag:
 
-- `SNAP` — model snapshot directory (required by `glm`; set from `--model`).
+- `SNAP` — model snapshot directory (required by `glm` / `glm.exe`; set from `--model`).
 - `SERVE`, `SERVE_BATCH` — select serve / batched-serve mode.
 - `PROMPT` — one-shot text mode.
 - `COLI_OMP_TUNED` — internal sentinel guarding the OMP re-exec (see `COLI_NO_OMP_TUNE`); not user-facing.
