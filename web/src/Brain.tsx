@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react"
-import { BrainCircuit, Flame, Layers } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { BrainCircuit, Flame, Layers, LoaderCircle } from "lucide-react"
 
 import { endpoint } from "@/lib/api"
 
@@ -8,6 +8,24 @@ interface AtlasEntry { affinity: Record<string, number>; entropy: number; top: s
 
 const TIER_NAME = ["Disk", "RAM", "VRAM"]
 const TIER_RGB: [number, number, number][] = [[58, 71, 80], [90, 155, 216], [78, 214, 165]]
+
+// real GLM layer index for a grid row (mirrors the tooltip: +3 offset, MTP last)
+const realLayer = (row: number, rows: number) => (row === rows - 1 ? 78 : row + 3)
+
+// dev-only: synthesize a full-scale 76×256 (19,456-expert) map to prove the
+// canvas heatmap stays smooth. Enable with ?mock on the dev server.
+function mockExperts(): ExpertMap {
+  const rows = 76, cols = 256, n = rows * cols
+  let map = ""
+  for (let i = 0; i < n; i++) {
+    const tier = (Math.random() * 3) | 0
+    const heat = Math.random() < 0.14 ? 0 : (Math.random() * 40) | 0
+    map += (((tier << 6) | heat) & 0xff).toString(16).padStart(2, "0")
+  }
+  let hits = ""
+  for (let b = 0; b < Math.ceil(n / 8); b++) hits += ((Math.random() * 256) | 0).toString(16).padStart(2, "0")
+  return { rows, cols, map, hits, seq: Date.now() }
+}
 
 /* Layer-depth heuristic: what this region of the network tends to specialise in.
  * Honest framing — these are the depth roles observed across MoE interpretability
@@ -29,9 +47,11 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
   const [data, setData] = useState<ExpertMap | null>(null)
   const [atlas, setAtlas] = useState<Record<string, AtlasEntry> | null>(null)
   const [tip, setTip] = useState<{ x: number; y: number; row: number; col: number; tier: number; heat: number } | null>(null)
+  const [mode, setMode] = useState<"cumulative" | "turn">("cumulative")
   const pulseRef = useRef<Float32Array | null>(null)   // per-expert pulse intensity 0..1
   const lastSeq = useRef(0)
   const rafRef = useRef(0)
+  const mock = import.meta.env.DEV && new URLSearchParams(window.location.search).has("mock")
 
   // load the expert atlas if published (measured topic affinity, #175)
   useEffect(() => {
@@ -53,6 +73,7 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
 
   // poll /experts
   useEffect(() => {
+    if (mock) { setData(mockExperts()); return }
     if (!connected) return
     let disposed = false
     const base = baseUrl.replace(/\/v1\/?$/, "")
@@ -77,7 +98,7 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
     void poll()
     const t = window.setInterval(() => void poll(), 1500)
     return () => { disposed = true; window.clearInterval(t) }
-  }, [baseUrl, apiKey, connected])
+  }, [baseUrl, apiKey, connected, mock])
 
   // render loop: grid + decaying pulses
   useEffect(() => {
@@ -133,11 +154,37 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
     setTip({ x: e.clientX, y: e.clientY, row, col, tier: byte >> 6, heat: byte & 63 })
   }
 
-  const totals = data ? (() => {
-    const t = [0, 0, 0]
-    for (let i = 0; i < data.rows * data.cols; i++) t[(parseInt(data.map.substr(i * 2, 2), 16) || 0) >> 6]++
-    return t
-  })() : [0, 0, 0]
+  // tier totals + routing diagnostics in a single pass over the map/hits.
+  // ponytail: heat is log2-scaled (~2^heat selections), so cumulative "share"
+  // uses 2^heat as the weight — good enough for a caption, not a hit counter.
+  const stats = useMemo(() => {
+    if (!data) return null
+    const { rows, cols, map, hits } = data
+    const n = rows * cols
+    const totals = [0, 0, 0]
+    let sum = 0, maxW = -1, maxIdx = 0, deadCum = 0
+    for (let i = 0; i < n; i++) {
+      const byte = parseInt(map.substr(i * 2, 2), 16) || 0
+      totals[byte >> 6]++
+      const heat = byte & 63
+      const w = heat === 0 ? 0 : Math.pow(2, heat)
+      sum += w
+      if (w > maxW) { maxW = w; maxIdx = i }
+      if (heat === 0) deadCum++
+    }
+    let routed = 0, maxRow = 0, maxRowCount = 0
+    const rowCounts = new Array(rows).fill(0)
+    if (hits) for (let i = 0; i < n; i++) {
+      const byte = parseInt(hits.substr((i >> 3) * 2, 2), 16) || 0
+      if (byte & (1 << (i & 7))) { routed++; const r = (i / cols) | 0; if (++rowCounts[r] > maxRowCount) { maxRowCount = rowCounts[r]; maxRow = r } }
+    }
+    return {
+      totals, n,
+      cum: { hotLabel: `L${realLayer((maxIdx / cols) | 0, rows)}·E${maxIdx % cols}`, hotPct: sum > 0 ? (maxW / sum) * 100 : 0, dead: deadCum, active: n - deadCum },
+      turn: { maxRow, maxRowCount, routed, idle: n - routed },
+    }
+  }, [data])
+  const totals = stats?.totals ?? [0, 0, 0]
 
   return (
     <div className="brain-page">
@@ -151,9 +198,30 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
           <span className="brain-pulse-hint">⚡ white flash = routed this turn</span>
         </div>
       </div>
+      {data && stats ? (
+        <div className="brain-diag">
+          {mode === "cumulative" ? <>
+            <div className="brain-stat hot"><span>Hottest expert</span><strong>{stats.cum.hotLabel} <small>{stats.cum.hotPct.toFixed(stats.cum.hotPct < 10 ? 1 : 0)}% of routing</small></strong></div>
+            <div className="brain-stat"><span>Active experts</span><strong>{stats.cum.active.toLocaleString()} <small>{((stats.cum.active / stats.n) * 100).toFixed(0)}%</small></strong></div>
+            <div className="brain-stat dead"><span>Never routed</span><strong>{stats.cum.dead.toLocaleString()} <small>{((stats.cum.dead / stats.n) * 100).toFixed(0)}% dead</small></strong></div>
+          </> : <>
+            <div className="brain-stat hot"><span>Hottest layer</span><strong>L{realLayer(stats.turn.maxRow, data.rows)} <small>{stats.turn.maxRowCount} experts fired</small></strong></div>
+            <div className="brain-stat"><span>Routed this turn</span><strong>{stats.turn.routed.toLocaleString()} <small>{((stats.turn.routed / stats.n) * 100).toFixed(1)}%</small></strong></div>
+            <div className="brain-stat dead"><span>Idle this turn</span><strong>{stats.turn.idle.toLocaleString()} <small>{((stats.turn.idle / stats.n) * 100).toFixed(0)}%</small></strong></div>
+          </>}
+          <div className="brain-toggle" role="group" aria-label="Routing window">
+            <button type="button" className={mode === "cumulative" ? "active" : ""} onClick={() => setMode("cumulative")}>Cumulative</button>
+            <button type="button" className={mode === "turn" ? "active" : ""} onClick={() => setMode("turn")}>This turn</button>
+          </div>
+        </div>
+      ) : null}
       <div className="brain-canvas-wrap" ref={wrapRef}>
         <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={() => setTip(null)} />
-        {!connected && <p className="runtime-unavailable">Connect to the engine to see the cortex.</p>}
+        {data ? null : !connected ? (
+          <div className="brain-placeholder"><div className="ph-inner"><BrainCircuit className="size-7" /><strong>Cortex offline</strong><p>Connect to a colibrì engine to watch expert routing light up in real time.</p></div></div>
+        ) : (
+          <div className="brain-placeholder"><div className="ph-inner"><LoaderCircle className="size-6 animate-spin" /><strong>Waiting for the routing table…</strong><p>The heatmap appears as soon as the model reports its expert map.</p></div></div>
+        )}
       </div>
       {tip && data && (() => {
         const isMtp = tip.row === data.rows - 1

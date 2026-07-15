@@ -4,6 +4,9 @@ export interface ChatMessage {
   id: string
   role: ChatRole
   content: string
+  // client-only display metadata — stripped before the request is sent.
+  reasoning?: boolean // this assistant turn streams a <think> block
+  thinkMs?: number    // measured reasoning duration, frozen when </think> lands
 }
 
 interface OpenAIError {
@@ -47,6 +50,19 @@ export interface HealthResponse {
   kv_slots?: number
   tiers?: TiersHealth
   hwinfo?: HwinfoHealth
+  // optional: only some builds advertise the model's context window.
+  n_ctx?: number
+}
+
+// Turn a raw fetch/JSON failure into something a human can act on. A dead
+// endpoint surfaces as "Failed to fetch" or a JSON parse error ("Unexpected
+// token '<'…") when an HTML error page comes back — neither helps the user.
+export function friendlyError(error: unknown, baseUrl: string): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  if (/failed to fetch|networkerror|load failed|unexpected token|not valid json|json\.parse|ecconnrefused|refused/i.test(raw)) {
+    return `Can't reach the engine at ${baseUrl} — is \`coli serve\` running?`
+  }
+  return raw || "Something went wrong talking to the engine."
 }
 
 export interface TokenUsage {
@@ -118,6 +134,7 @@ export interface StreamChatOptions {
   model: string
   messages: ChatMessage[]
   temperature: number
+  topP?: number
   maxTokens: number
   enableThinking: boolean
   cacheSlot?: number
@@ -134,6 +151,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamChat
       model: options.model,
       messages: options.messages.map(({ role, content }) => ({ role, content })),
       temperature: options.temperature,
+      top_p: options.topP ?? 0.9,
       max_completion_tokens: options.maxTokens,
       enable_thinking: options.enableThinking,
       ...(options.cacheSlot === undefined ? {} : { cache_slot: options.cacheSlot }),
