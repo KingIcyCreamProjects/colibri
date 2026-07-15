@@ -309,6 +309,7 @@ export default function App() {
     const sys = systemPrompt.trim()
     const reqMessages = sys ? [message("system", sys), ...history] : history
     const t0 = performance.now()
+    let tFirst = t0
     let firstToken = true
     let count = 0
     let acc = ""
@@ -330,7 +331,7 @@ export default function App() {
         cacheSlot: supportsCacheSlots(health) ? cacheSlot : undefined,
         signal: controller.signal,
         onDelta: (delta) => {
-          if (firstToken) { setTtft(performance.now() - t0); firstToken = false }
+          if (firstToken) { setTtft(performance.now() - t0); tFirst = performance.now(); firstToken = false }
           count++
           acc += delta
           setTokenCount(count)
@@ -339,9 +340,12 @@ export default function App() {
             const ms = performance.now() - t0
             updateMessages((current) => current.map((item) => (item.id === assistant.id ? { ...item, thinkMs: ms } : item)))
           }
-          const secs = (performance.now() - t0) / 1000
-          if (secs > 0.3) {
-            const tps = count / secs
+          // velocita' di DECODE (dal primo token): il prefill ha gia' il suo
+          // badge (TTFT) — includerlo qui faceva leggere 0.6 quando il motore
+          // decodeva a 1.1+ (denominatore = tempo dal send, non dal 1° token)
+          const secs = (performance.now() - tFirst) / 1000
+          if (count >= 2 && secs > 0.3) {
+            const tps = (count - 1) / secs
             setTokPerSec(tps)
             const now = performance.now()
             if (now - lastSample > 150) {
@@ -354,8 +358,8 @@ export default function App() {
           updateMessages((current) => current.map((item) => (item.id === assistant.id ? { ...item, content: item.content + delta } : item)))
         },
       })
-      const finalElapsed = (performance.now() - t0) / 1000
-      if (count > 0 && finalElapsed > 0) setTokPerSec(count / finalElapsed)
+      const decodeElapsed = (performance.now() - tFirst) / 1000
+      if (count >= 2 && decodeElapsed > 0) setTokPerSec((count - 1) / decodeElapsed)
       if (result.usage) setTotalTokens((prev) => ({
         prompt: prev.prompt + (result.usage?.prompt_tokens || 0),
         completion: prev.completion + (result.usage?.completion_tokens || 0),
