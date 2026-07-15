@@ -39,8 +39,8 @@ Flags may also be given **after** the subcommand. Most flags map onto an engine 
 | `--cap` | `8` | `<cap>` argv | Expert-cache cap (starting point; see `CAP_RAISE`). |
 | `--ngen` | `1024` | `NGEN` | Max tokens to generate. |
 | `--temp` | none (`0`=greedy; engine auto default `0.7`) | `TEMP` | Token-sampling temperature. |
-| `--topp` | `0` | `TOPP` | **Expert-routing** reduction (adaptive top-p over experts): drop the low-weight tail of routed experts for fewer disk reads, at a small quality cost. Not a token-sampling filter. **Lossy** — prints a warning. |
-| `--topk` | `0` | `TOPK` | **Expert-routing** reduction: cap routed experts per token for fewer disk reads, at a small quality cost. Not a token-sampling filter. **Lossy** — prints a warning. |
+| `--topp` | `0` | `TOPP` | **Expert-routing** reduction (adaptive top-p over experts): drop the low-weight tail of routed experts for fewer disk reads, at a small quality cost. Not a token-sampling filter. **Lossy** — the engine prints a stderr warning. |
+| `--topk` | `0` | `TOPK` | **Expert-routing** reduction: cap routed experts per token for fewer disk reads, at a small quality cost. Not a token-sampling filter. **Lossy** — the engine prints a stderr warning. |
 | `--repin` | `0` | `REPIN` | Re-pin experts every N tokens. |
 | `--policy` | `quality` | `COLI_POLICY` | `quality` \| `balanced` \| `experimental-fast`. |
 | `--gpu` | `None` | `COLI_GPU(S)` | `auto`, `none`, or a device list like `0,1`. |

@@ -70,25 +70,32 @@ For the raw `nvcc` invocation this expands to (and the MSVC `-Xcompiler=-W3` rea
 
 ```bash
 pip install -U huggingface_hub
-hf download mateogrgic/GLM-5.2-colibri-int4-with-int8-mtp --local-dir D:\glm52_i4
+hf download mateogrgic/GLM-5.2-colibri-int4-with-int8-mtp --local-dir C:\models\glm52_i4
 ```
 
 The download is **~370 GB** and skips the FP8→int4 conversion entirely. **The MTP head must be int8** — int4 heads give 0% draft acceptance and speculation silently never engages ([#8](https://github.com/JustVugg/colibri/issues/8)). Verify the three head files:
 
 ```powershell
-Get-ChildItem D:\glm52_i4\out-mtp-*      # int8 (correct): 3527131672 / 5366238584 / 1065950496
+Get-ChildItem C:\models\glm52_i4\out-mtp-*      # int8 (correct): 3527131672 / 5366238584 / 1065950496
 ```
 
 If you instead see `1765523544 / 2686077736 / 536747200`, those are int4 heads — replace just those three files from the int8 mirror.
 
-**5. Run** with the recommended env for a Gen5-NVMe box:
+**5. Run.** On Windows the `coli` launcher already applies the measured
+lossless defaults automatically — `DIRECT=1` (unbuffered reads), `PIPE=1`
+(load/matmul overlap, byte-identical output), `PILOT_REAL=1` (cross-layer
+prefetch) and the OpenMP hot-team tuning — each overridable by setting the
+variable yourself (e.g. `$env:DIRECT="0"`; `COLI_NO_OMP_TUNE=1` disables just
+the OMP block):
 
 ```powershell
-$env:PIPE="1"; $env:DIRECT="1"; $env:MLOCK="1"
-python coli chat --model D:\glm52_i4
+$env:MLOCK="1"                                # optional: wire the pinned tier into RAM
+python coli chat --model C:\models\glm52_i4
 ```
 
-`PIPE=1` overlaps expert disk-load with matmul (byte-identical output; `PIPE_WORKERS` defaults to 8), `DIRECT=1` uses the O_DIRECT/unbuffered read path, `MLOCK=1` wires the streamed expert cache into RAM. The `coli` launcher sets the OpenMP hot-team tuning automatically (disable with `COLI_NO_OMP_TUNE=1`). To add the GPU expert tier: `$env:COLI_CUDA="1"; $env:COLI_GPU="0"; $env:CUDA_EXPERT_GB="8"`.
+To add the GPU tier on an RTX card (all measured on the reference box, see
+[docs/tuning-9950x3d-5090.md](docs/tuning-9950x3d-5090.md)):
+`$env:COLI_CUDA="1"; $env:COLI_GPU="0"; $env:CUDA_EXPERT_GB="24"; $env:REPIN="16"; $env:CUDA_DENSE="1"; $env:COLI_CUDA_ATTN="1"`.
 
 Every engine knob is documented in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md); the CLI/server flags in [docs/SETTINGS.md](docs/SETTINGS.md).
 
@@ -169,7 +176,7 @@ The `web/` UI is a pure OpenAI-API client (React + TypeScript) — it never touc
 `coli serve` keeps one model process loaded and exposes a text-only OpenAI-compatible HTTP API (`GET /v1/models`, `POST /v1/chat/completions`, legacy `POST /v1/completions`), with SSE streaming, usage counts, `temperature`, `top_p`, and the `enable_thinking` / `reasoning_effort` extensions. The gateway uses only the Python standard library.
 
 ```bash
-COLI_MODEL=D:\glm52_i4 COLI_API_KEY=local-secret ./coli serve --host 127.0.0.1 --port 8000
+COLI_MODEL=C:\models\glm52_i4 COLI_API_KEY=local-secret ./coli serve --host 127.0.0.1 --port 8000
 ```
 
 One mutable KV context means HTTP generation uses a bounded FIFO admission queue (`--max-queue`, `--queue-timeout`) rather than faking parallel sequences; `GET /health` exposes the counters. `--kv-slots N` allocates up to 16 independent sequence contexts (select one with the `cache_slot` request field). The default bind is localhost — set `COLI_API_KEY` before exposing it, and add `--cors-origin` for browser UIs.

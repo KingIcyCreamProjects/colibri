@@ -112,13 +112,18 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
     canvas.width = cols * (cell + gap)
     canvas.height = rows * (cell + gap)
 
+    // decodifica l'EMAP una volta per aggiornamento (il poll e' ogni 1.5s):
+    // ri-parsare l'hex di 19k celle dentro ogni frame rAF era lavoro sprecato
+    const bytes = new Uint8Array(rows * cols)
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(map.substr(i * 2, 2), 16) || 0
+
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       const p = pulseRef.current
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const i = r * cols + c
-          const byte = parseInt(map.substr(i * 2, 2), 16) || 0
+          const byte = bytes[i]
           const tier = byte >> 6
           const heat = byte & 63
           const [R, G, B] = TIER_RGB[tier] ?? TIER_RGB[0]

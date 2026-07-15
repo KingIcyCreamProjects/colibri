@@ -42,7 +42,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { friendlyError, getHealth, listModels, streamChat, type ChatMessage, type HealthResponse, type StreamChatResult } from "@/lib/api"
 import { activeRequests, supportsCacheSlots } from "@/lib/runtime"
-import { Markdown, copyText } from "@/lib/markdown"
+import { Markdown, copyText, visibleAnswer } from "@/lib/markdown"
 import { Brain } from "./Brain"
 import { persist, persistPublicSettings, stored } from "@/lib/storage"
 import { useTheme, type Theme } from "@/lib/theme"
@@ -81,7 +81,7 @@ function MessageTools({ item, loading, onRegen, onEdit }: {
   const timer = useRef<number>(0)
   useEffect(() => () => window.clearTimeout(timer.current), [])
   const copy = () => {
-    void copyText(item.content)
+    void copyText(visibleAnswer(item.content, item.reasoning))
     setCopied(true)
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setCopied(false), 1400)
@@ -221,8 +221,9 @@ export default function App() {
   // EFFECT #5 — keep the selected slot in range
   useEffect(() => { if (cacheSlot >= kvSlots) setCacheSlot(0) }, [cacheSlot, kvSlots])
 
-  // EFFECT #6 — reset per-slot run metrics on slot change
-  useEffect(() => { setLastRun(null) }, [cacheSlot])
+  // EFFECT #6 — reset per-slot run metrics on slot change (anche i badge
+  // "persistenti": appartengono al run del vecchio slot, non a questo)
+  useEffect(() => { setLastRun(null); setTokPerSec(null); setTtft(null); setSpark([]); setTokenCount(0) }, [cacheSlot])
 
   // EFFECT #7 (P1) — pin to bottom only while the viewport is already at bottom
   useEffect(() => { if (atBottom) bottomRef.current?.scrollIntoView({ block: "end" }) }, [messages, atBottom])
@@ -528,6 +529,7 @@ export default function App() {
 
         {view === "brain" ? <Brain baseUrl={baseUrl} apiKey={apiKey} connected={connected} /> : <>
 
+        <div className="chat-scroll">
         <div className="conversation" ref={scrollRef}>
           {!hasMessages ? (
             connError ? (
@@ -587,6 +589,9 @@ export default function App() {
               <div ref={bottomRef} />
             </div>
           )}
+        </div>
+          {/* fuori dallo scroller: un figlio absolute di un contenitore overflow
+              scrolla col contenuto e sparisce nelle conversazioni lunghe (Wave 3) */}
           {hasMessages && !atBottom ? (
             <button type="button" className="jump-latest" onClick={jumpToLatest}><ChevronDown className="size-4" /> Jump to latest</button>
           ) : null}

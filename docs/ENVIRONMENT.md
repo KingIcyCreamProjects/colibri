@@ -21,8 +21,8 @@ Format: `VAR` — default — effect.
 | `NGEN` | `256` (engine) | Max tokens to generate before stopping (stop tokens can end sooner). `coli --ngen` defaults to `1024`. |
 | `TEMP` | `-1` (auto: `0.7` for chat/text, greedy elsewhere) | Token-sampling temperature. **`TEMP=0` = greedy/argmax = deterministic.** The `0.7` auto default is deliberately below the official `1.0`: at int4 the distribution tail is quantization noise. |
 | `NUCLEUS` | `0.90` | Nucleus (top-p) mass kept when **sampling tokens**. Slightly tighter than the official 0.95 because the int4 tail is noisy. This is the token-level top-p — distinct from the expert-routing `TOPP` below. |
-| `TOPK` | `0` (off) | **Expert-routing reduction, not a token-sampling filter:** run only `TOPK` routed experts per token instead of the model's configured top-K (`0` = no reduction). Fewer experts → fewer per-token disk reads, at a small quality cost. **Lossy** — off by default; the CLI prints a warning when set. |
-| `TOPP` | `0` (off) | **Expert-routing reduction** (adaptive top-p over experts): keep routed experts until their cumulative gate weight reaches `TOPP`, dropping the low-weight tail (`0` = off). ~30–40% fewer expert disk reads at a small quality cost. **Lossy** — off by default; the CLI prints a warning when set. For token sampling top-p use `NUCLEUS`. |
+| `TOPK` | `0` (off) | **Expert-routing reduction, not a token-sampling filter:** run only `TOPK` routed experts per token instead of the model's configured top-K (`0` = no reduction). Fewer experts → fewer per-token disk reads, at a small quality cost. **Lossy** — off by default; the engine prints a stderr warning when set. |
+| `TOPP` | `0` (off) | **Expert-routing reduction** (adaptive top-p over experts): keep routed experts until their cumulative gate weight reaches `TOPP`, dropping the low-weight tail (`0` = off). ~30–40% fewer expert disk reads at a small quality cost. **Lossy** — off by default; the engine prints a stderr warning when set. For token sampling top-p use `NUCLEUS`. |
 | `SEED` | unset → seeded from clock + PID | RNG seed for sampling. **Unset = different every run.** Set a fixed value for reproducible sampling. |
 | `KVSAVE` | `1` (on) | Persist the KV cache to `<model>/.coli_kv` so a conversation reopens warm. `KVSAVE=0` disables save+load (lossless round-trip; does not change output). |
 | `KV_SLOTS` | `1` | Number of independent KV conversation slots (1–16), used in serve mode. |
@@ -104,7 +104,7 @@ These are for testing, benchmarking, or internal use — not part of the everyda
 | Variable | Default | Effect |
 |---|---|---|
 | `SPEC` | `1` | Speculative decoding on/off. |
-| `DRAFT` | `-1` (auto: 3 with MTP, else 0) | Number of speculative draft tokens per step. Speculation is **not byte-identical** to non-speculative greedy in practice; set `DRAFT=0` for exact, reproducible decode. |
+| `DRAFT` | `-1` (auto: 3 with MTP on CPU builds; 0 when CUDA is enabled — verify batches inflate expert traffic, measured 0.65 vs 1.05 tok/s on the reference box) | Number of speculative draft tokens per step. Speculation is **not byte-identical** to non-speculative greedy in practice; set `DRAFT=0` for exact, reproducible decode. |
 | `GRAMMAR` | unset | Path to a GBNF grammar file to constrain generation via forced drafts (output is unchanged if unset). |
 | `SCHEMA` | unset | Path to a JSON-Schema file, compiled to GBNF (`schema_gbnf.h`) as the same forced-draft source — the everyday front door for constrained JSON / structured output. `GRAMMAR` takes precedence if both are set; both fail soft (the engine runs and output is unchanged). |
 | `GRAMMAR_DRAFT` | `24` | Max grammar-forced draft span length per forward (clamped to 1–48). |

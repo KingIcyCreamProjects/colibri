@@ -123,7 +123,9 @@ export function splitBlocks(text: string): Block[] {
 // ----------------------------------------------------------------------------
 // inline markdown: `code`, **bold**, *italic*, [label](url)
 // ----------------------------------------------------------------------------
-const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*|_[^_\n]+_)|(\[[^\]\n]+\]\((?:https?:\/\/|mailto:)[^)\s]+\))/g
+// italic: solo asterischi, con guardie anti-intraword — niente `_..._`, che
+// mangiava snake_case (cache_slot, top_p) nella prosa tecnica (review Wave 3)
+const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|((?<![\w*])\*[^*\s][^*\n]*\*(?![\w*]))|(\[[^\]\n]+\]\((?:https?:\/\/|mailto:)[^)\s]+\))/g
 
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = []
@@ -282,11 +284,21 @@ export function splitReasoning(content: string): { think: string; answer: string
   return { think: content.slice(0, i).replace(/^\s*<think>/, ""), answer: content.slice(i + 8) }
 }
 
+// testo "come lo vede l'utente" per la clipboard: sui turni reasoning il
+// content grezzo e' "ragionamento</think>risposta" — copia solo la risposta
+export function visibleAnswer(content: string, reasoning?: boolean): string {
+  if (!reasoning) return content
+  const split = splitReasoning(content)
+  return split ? split.answer.trim() : content
+}
+
 export function Markdown({ content, streaming, reasoning, thinkMs }: {
   content: string; streaming: boolean; reasoning?: boolean; thinkMs?: number
 }) {
   const shown = useThrottled(content, streaming)
-  const split = splitReasoning(shown)
+  // gate sul flag del turno: un messaggio NON-reasoning che contiene la stringa
+  // letterale </think> deve renderizzare verbatim (review Wave 3)
+  const split = reasoning ? splitReasoning(shown) : null
   // Before </think> exists, treat the whole stream as live reasoning when this
   // turn is a thinking turn.
   if (split) {

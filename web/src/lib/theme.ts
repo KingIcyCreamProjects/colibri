@@ -18,6 +18,9 @@ export function applyTheme(theme: Theme) {
   if (theme === "auto") root.removeAttribute("data-theme")
   else root.setAttribute("data-theme", theme)
   try { localStorage.setItem(KEY, theme) } catch { /* restricted storage */ }
+  // tieni la chrome del browser mobile allineata al tema effettivo (Wave 3)
+  const dark = theme === "dark" || (theme === "auto" && window.matchMedia?.("(prefers-color-scheme: dark)").matches)
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#080b0d" : "#f2efe7")
 }
 
 export function useTheme() {

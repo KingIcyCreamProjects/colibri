@@ -9,6 +9,12 @@
 | `ENVIRONMENT.md` | `c/glm.c` (and other `c/*.c`, `c/*.cu`, `c/*.mm`) | every `getenv("...")` call — the default and the trailing `/* comment */` |
 | `SETTINGS.md` | `c/coli`, `c/openai_server.py` | every `add_parser(...)` and `add_argument(...)` |
 
+Known stale inline comments (regeneration traps): the TEMP getenv comment in
+glm.c still says the auto default is 1.0, but the engine resolves it to 0.7
+(glm.c `if(g_temp<0) g_temp=0.7f`); the TOPK/TOPP comments read like sampling
+knobs but they reduce expert routing. After any regeneration, hand-verify the
+TEMP/TOPK/TOPP rows against the resolution code, not the comments.
+
 Nothing else defines these. If a knob isn't at one of those call sites, it isn't real.
 
 ## Step 1 — extract the current state
