@@ -174,10 +174,17 @@ def env_for(a):
                      ("OMP_DYNAMIC", "FALSE"),
                      ("OMP_NUM_THREADS", str(physical_cpu_count()))):
             e.setdefault(k, v)
-        # DIRECT=1 su NVMe reale batte la page cache di Windows (iobench su
-        # questo box: 10.7 GB/s O_DIRECT vs 9.0 buffered anche a cache calda;
-        # upstream #162 misura 1.47x decode). setdefault: DIRECT=0 esplicito vince.
+        # Default Windows misurati sul box di riferimento (docs/tuning-9950x3d-5090.md),
+        # tutti lossless e tutti setdefault (un override esplicito vince sempre):
+        # - DIRECT=1: 10.7 GB/s O_DIRECT vs 9.0 buffered (iobench, anche a cache
+        #   calda); nel motore 0.48 -> 1.02 tok/s. Upstream #162: 1.47x.
+        # - PIPE=1: overlap load/matmul, +8% sopra DIRECT (byte-identico, riordina
+        #   solo l'I/O). PIPE_WORKERS resta al default 8 (sweep 4/8/16 piatto).
+        # - PILOT_REAL=1: prefetch cross-layer con load veri (unico prefetch
+        #   funzionante su Windows: fadvise e' no-op), +11%, hit rate +19 punti.
         e.setdefault("DIRECT", "1")
+        e.setdefault("PIPE", "1")
+        e.setdefault("PILOT_REAL", "1")
     e["COLI_POLICY"]=a.policy
     if a.ram:  e["RAM_GB"]=str(a.ram)
     if a.ngen: e["NGEN"]=str(a.ngen)
