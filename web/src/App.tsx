@@ -227,13 +227,16 @@ export default function App() {
   // EFFECT #7 (P1) — pin to bottom only while the viewport is already at bottom
   useEffect(() => { if (atBottom) bottomRef.current?.scrollIntoView({ block: "end" }) }, [messages, atBottom])
 
-  // EFFECT (P1) — watch the bottom sentinel to know if we should auto-pin
+  // EFFECT (P1) — track whether the viewport is at (or within 80px of) the
+  // bottom; that tolerance keeps us pinned across font reflow and the last
+  // line's line-height without fighting a deliberate scroll-up.
   useEffect(() => {
-    const root = scrollRef.current, target = bottomRef.current
-    if (!root || !target) return
-    const io = new IntersectionObserver(([entry]) => setAtBottom(entry.isIntersecting), { root, threshold: 0 })
-    io.observe(target)
-    return () => io.disconnect()
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
+    el.addEventListener("scroll", onScroll, { passive: true })
+    onScroll()
+    return () => el.removeEventListener("scroll", onScroll)
   }, [view, hasMessages])
 
   const scheduleReconnect = () => {

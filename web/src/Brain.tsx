@@ -217,11 +217,11 @@ export function Brain({ baseUrl, apiKey, connected }: { baseUrl: string; apiKey:
       ) : null}
       <div className="brain-canvas-wrap" ref={wrapRef}>
         <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={() => setTip(null)} />
-        {!connected ? (
+        {data ? null : !connected ? (
           <div className="brain-placeholder"><div className="ph-inner"><BrainCircuit className="size-7" /><strong>Cortex offline</strong><p>Connect to a colibrì engine to watch expert routing light up in real time.</p></div></div>
-        ) : !data ? (
+        ) : (
           <div className="brain-placeholder"><div className="ph-inner"><LoaderCircle className="size-6 animate-spin" /><strong>Waiting for the routing table…</strong><p>The heatmap appears as soon as the model reports its expert map.</p></div></div>
-        ) : null}
+        )}
       </div>
       {tip && data && (() => {
         const isMtp = tip.row === data.rows - 1

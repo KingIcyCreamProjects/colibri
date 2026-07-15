@@ -236,7 +236,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .md p { margin: 0 0 12px; }
 .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 20px 0 10px; line-height: 1.3; font-weight: 650; }
 .md h2 { font-size: var(--text-lg); } .md h3 { font-size: var(--text-md); } .md h4, .md h5, .md h6 { font-size: var(--text-base); color: var(--muted-foreground); }
-.md ul, .md ol { margin: 0 0 12px; padding-left: 22px; } .md li { margin: 3px 0; } .md li::marker { color: var(--faint); }
+.md ul, .md ol { margin: 0 0 12px; padding-left: 24px; } .md ul { list-style: disc; } .md ol { list-style: decimal; } .md li { margin: 3px 0; } .md li::marker { color: var(--faint); }
 .md a { color: var(--primary-ink); text-decoration: underline; text-underline-offset: 2px; }
 .md blockquote { margin: 0 0 12px; padding: 2px 0 2px 14px; border-left: 2px solid var(--accent-line); color: var(--muted-foreground); }
 .md hr { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
