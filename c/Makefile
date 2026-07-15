@@ -123,6 +123,10 @@ else
 CUDA_HOME ?= /usr/local/cuda
 NVCC      ?= $(CUDA_HOME)/bin/nvcc
 endif
+# `native` asks nvcc to probe the GPUs attached at BUILD time; if detection
+# fails (no GPU visible, VM, old driver) the DLL ships with no matching SASS
+# and no PTX fallback. Pass the arch explicitly when in doubt, e.g. Blackwell
+# consumer (RTX 50-series): make cuda-dll CUDA_ARCH=sm_120  (needs CUDA >= 12.8).
 CUDA_ARCH ?= native
 ifneq ($(IS_WIN),)
 # nvcc's host compiler on Windows is MSVC cl.exe: the GCC-style
