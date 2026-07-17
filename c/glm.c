@@ -4186,9 +4186,14 @@ static uint64_t g_rng=0x9E3779B97F4A7C15ULL;
 static inline double rndu(void){ g_rng^=g_rng<<13; g_rng^=g_rng>>7; g_rng^=g_rng<<17;
     return (double)(g_rng>>11)*(1.0/9007199254740992.0); }
 static float *g_pbuf=NULL; static int *g_pidx=NULL;   /* buffer riusati (decode single-thread) */
-static int cmp_pdesc(const void *a,const void *b){
-    float pa=g_pbuf[*(const int*)a], pb=g_pbuf[*(const int*)b];
-    return pa<pb ? 1 : pa>pb ? -1 : 0; }
+/* sift-down su g_pidx[0..n): max-heap per probabilita' (g_pbuf[indice]) */
+static inline void pidx_sift(int i, int n){
+    for(;;){ int l=2*i+1, r=2*i+2, b=i;
+        if(l<n && g_pbuf[g_pidx[l]]>g_pbuf[g_pidx[b]]) b=l;
+        if(r<n && g_pbuf[g_pidx[r]]>g_pbuf[g_pidx[b]]) b=r;
+        if(b==i) return;
+        int t=g_pidx[i]; g_pidx[i]=g_pidx[b]; g_pidx[b]=t; i=b; }
+}
 /* costruisce in g_pbuf la distribuzione target: softmax(lo/temp) troncata a top-p g_nuc */
 static void dist_build(const float *lo, int V){
     if(!g_pbuf){ g_pbuf=falloc(V); g_pidx=malloc(V*sizeof(int)); }
@@ -4197,13 +4202,30 @@ static void dist_build(const float *lo, int V){
     for(int i=0;i<V;i++){ g_pbuf[i]=expf((lo[i]-mx)*invt); s+=g_pbuf[i]; }
     for(int i=0;i<V;i++) g_pbuf[i]/=(float)s;
     if(g_nuc>0 && g_nuc<1.f){
+        /* top-p senza full sort: il qsort discendente su tutto V (151K sul GLM)
+         * costava 5-8ms per token campionato; qui max-heap O(V) + una pop
+         * O(log V) per vincitore, e a p=0.9 la testa e' di poche centinaia di
+         * token (~0.8ms totali). Semantica identica al vecchio qsort: stessa
+         * testa cumulata, coda azzerata, stessa rinormalizzazione (s2 sommato
+         * in ordine decrescente come prima); sui pareggi al bordo anche qsort
+         * era gia' instabile.
+         * INVARIANTE per dist_sample: ogni entry fuori dalla testa DEVE
+         * restare esattamente 0 (dist_sample scorre tutto g_pbuf). */
         for(int i=0;i<V;i++) g_pidx[i]=i;
-        qsort(g_pidx,V,sizeof(int),cmp_pdesc);
-        double cum=0; int keep=V;
-        for(int i=0;i<V;i++){ cum+=g_pbuf[g_pidx[i]]; if(cum>=g_nuc){ keep=i+1; break; } }
-        double s2=0; for(int i=keep;i<V;i++) g_pbuf[g_pidx[i]]=0;
-        for(int i=0;i<keep;i++) s2+=g_pbuf[g_pidx[i]];
-        for(int i=0;i<keep;i++) g_pbuf[g_pidx[i]]/=(float)s2;
+        int n=V;
+        for(int r=n/2-1;r>=0;r--) pidx_sift(r,n);        /* heapify O(V) */
+        double cum=0;
+        while(n>0){                                       /* estrai finche' cum>=p */
+            int top=g_pidx[0]; cum+=g_pbuf[top];
+            g_pidx[0]=g_pidx[--n]; g_pidx[n]=top;         /* vincitore in coda */
+            if(cum>=g_nuc) break;
+            pidx_sift(0,n);
+        }
+        /* testa = g_pidx[n..V-1] (ordine decrescente da V-1 verso n);
+         * il resto (g_pidx[0..n-1]) e' la coda da azzerare */
+        double s2=0; for(int i=V-1;i>=n;i--) s2+=g_pbuf[g_pidx[i]];
+        for(int i=0;i<n;i++) g_pbuf[g_pidx[i]]=0;
+        for(int i=n;i<V;i++) g_pbuf[g_pidx[i]]/=(float)s2;
     }
 }
 /* campiona da g_pbuf; ban>=0 -> quel token e' escluso (rinormalizzando al volo) */
